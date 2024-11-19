@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monitor"
+authors = [
+    { name = "Christian Schäfer", email = "christian.schaefer@tatenmitdaten.com" },
+]
+description = "Package for monitoring AWS Lambda execution results"
+requires-python = ">=3.12"
+dynamic = ["version"]
+
+dependencies = [
+    "typer"
+]
+
+[tool.setuptools]
+packages = ["monitor"]
+
+[project.optional-dependencies]
+dev = [
+    "boto3",
+    "boto3-stubs[ses]",
+    "moto",
+    "pytest",
+    "mypy",
+    "flake8",
+]
+
+[project.scripts]
+monitor = "monitor.cli:cli"
