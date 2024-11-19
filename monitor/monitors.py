@@ -3,13 +3,13 @@ import zoneinfo
 from dataclasses import dataclass
 from datetime import datetime
 from logging import getLogger
+from typing import cast
 from typing import Generic
 
 import boto3
 from botocore.exceptions import ClientError
 
 from monitor.messages import BaseMessageType
-from monitor.messages import LambdaErrorMessage
 
 env = os.environ.get('APP_ENV', 'dev')
 timezone = zoneinfo.ZoneInfo('Europe/Berlin')
@@ -31,13 +31,14 @@ class EmailMonitor(BaseMonitor):
         'christian.schaefer@tatenmitdaten.com',
     )
 
-    def notify(self, message: LambdaErrorMessage):
+    def notify(self, message: BaseMessageType):
         to_addresses = list(self.developer_addresses)
         if env == 'prod':
             to_addresses.extend(self.business_addresses)
         datetime_str = datetime.now(timezone).strftime("%d.%m.%Y %H:%M:%S")
         subject = f'⚠ ELT-Fehler ({message.name or 'unbekannt'}) - {datetime_str}'
-        return send_email(subject, message.as_str, to_addresses, self.sender_address)
+        message = cast(str, message.as_str)  # workaround for PyCharm bug
+        return send_email(subject, message, to_addresses, self.sender_address)
 
 
 def send_email(subject: str, message: str, to_addresses: list[str], source: str):

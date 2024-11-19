@@ -39,15 +39,6 @@ class BaseMessage(ABC, Generic[BaseMessageType]):
             raise ValueError('Error message is not a JSON string.')
         return cls.from_dict(error_dict)
 
-    @classmethod
-    def from_event(cls, event: dict) -> BaseMessageType:
-        try:
-            error_dict = json.loads(event['errorMessage'])
-        except json.JSONDecodeError:
-            logger.error(f'Error message is not a JSON string: {event["errorMessage"]}')
-            raise ValueError('Error message is not a JSON string.')
-        return cls.from_dict(error_dict)
-
     @property
     @abstractmethod
     def as_str(self) -> str:
@@ -66,21 +57,6 @@ class ErrorMessage(BaseMessage):
             f'Message: {self.text}'
         )
 
-    @classmethod
-    def from_event(cls, event: dict) -> 'ErrorMessage':
-        if 'errorMessage' in event:
-            return super().from_event(event)
-        elif 'Error' in event and 'Cause' in event:
-            return cls(
-                name=event['Error'],
-                text=event['Cause']
-            )
-        else:
-            return cls(
-                name='Unknown',
-                text=json.dumps(event, indent=2, default=str)
-            )
-
 
 @dataclass
 class LambdaErrorMessage(ErrorMessage):
@@ -91,7 +67,7 @@ class LambdaErrorMessage(ErrorMessage):
 
     @property
     def as_str(self) -> str:
-        return super().as_str + (
+        return super().as_str + '\n' + (
             f'Traceback:\n{self.traceback}\n'
             f'AWS Request ID: {self.request_id}\n'
             f'CloudWatch Logs: {self.cloudwatch}\n'
@@ -156,6 +132,7 @@ class LambdaErrorMessage(ErrorMessage):
 
 @dataclass
 class DbtMessage(BaseMessage):
+    name: str
     text: str
 
     @property
@@ -163,11 +140,19 @@ class DbtMessage(BaseMessage):
         return self.text
 
 
-def parse_nested_error_event(event: dict) -> dict:
+def from_event(event: dict) -> BaseMessageType:
     if 'Error' in event and 'Cause' in event:
-        try:
-            cause = json.loads(event['Cause'])
-            event['Cause'] = parse_nested_error_event(cause)
-        except json.JSONDecodeError:
-            return event
-    return event
+        if isinstance(event['Cause'], str):
+            event['Cause'] = json.loads(event['Cause'])
+        return from_event(event['Cause'])
+
+    match event.get('errorType'):
+        case 'LambdaException':
+            error_message_dict = json.loads(event['errorMessage'])
+            return LambdaErrorMessage(**error_message_dict)
+        case 'DbtRuntimeError':
+            error_message_dict = json.loads(event['errorMessage'])
+            return DbtMessage(**error_message_dict)
+        case _:
+            text = json.dumps(event, indent=2, default=str)
+            return ErrorMessage(name='Unknown', text=text)
