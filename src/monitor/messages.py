@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ from abc import ABC
 from abc import abstractmethod
 from dataclasses import dataclass
 from dataclasses import field
+from json import JSONDecodeError
 from typing import Any
 from typing import Generic
 from typing import TypeVar
@@ -131,6 +133,43 @@ class LambdaErrorMessage(ErrorMessage):
 
 
 @dataclass
+class StepFunctionFailureMessage(ErrorMessage):
+    input: str
+    execution_arn: str
+    state_machine_arn: str
+    start_date: int
+    stop_date: int
+
+    @property
+    def cause_json(self) -> str:
+        cause_str = self.text
+        if 'Returned payload:' in self.text:
+            cause_str = self.text.split('Returned payload:')[1].strip()
+        try:
+            return json.dumps(json.loads(cause_str), indent=2, ensure_ascii=False)
+        except JSONDecodeError:
+            return self.text
+
+    @property
+    def input_json(self) -> str:
+        try:
+            return json.dumps(json.loads(self.input), indent=2, ensure_ascii=False)
+        except JSONDecodeError:
+            return self.input
+
+    @property
+    def as_str(self) -> str:
+        return super().as_str + '\n' + (
+            f'Cause:\n{self.cause_json}\n'
+            f'ExecutionArn: {self.execution_arn}\n'
+            f'StateMachineArn: {self.state_machine_arn}\n'
+            f'StartDate: {datetime.datetime.fromtimestamp(self.start_date / 1000).isoformat()}\n'
+            f'StopDate: {datetime.datetime.fromtimestamp(self.stop_date / 1000).isoformat()}\n'
+            f'Input:\n{self.input_json}'
+        )
+
+
+@dataclass
 class DbtMessage(BaseMessage):
     name: str
     text: str
@@ -142,9 +181,7 @@ class DbtMessage(BaseMessage):
 
 def from_event(event: dict) -> BaseMessageType:
     if 'Error' in event and 'Cause' in event:
-        if isinstance(event['Cause'], str):
-            event['Cause'] = json.loads(event['Cause'])
-        return from_event(event['Cause'])
+        event['errorType'] = 'StepFunctionFailure'
 
     match event.get('errorType'):
         case 'LambdaException':
@@ -153,6 +190,16 @@ def from_event(event: dict) -> BaseMessageType:
         case 'DbtRuntimeError':
             error_message_dict = json.loads(event['errorMessage'])
             return DbtMessage(**error_message_dict)
+        case 'StepFunctionFailure':
+            return StepFunctionFailureMessage(
+                name=event['Error'],
+                text=event['Cause'],
+                input=event.get('Input'),
+                execution_arn=event.get('ExecutionArn'),
+                state_machine_arn=event.get('StateMachineArn'),
+                start_date=event.get('StartDate'),
+                stop_date=event.get('StopDate')
+            )
         case _:
             text = json.dumps(event, indent=2, default=str)
             return ErrorMessage(name='Unknown', text=text)

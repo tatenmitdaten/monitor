@@ -11,13 +11,6 @@ description = "Package for monitoring AWS Lambda execution results"
 requires-python = ">=3.12"
 dynamic = ["version"]
 
-dependencies = [
-    "typer"
-]
-
-[tool.setuptools]
-packages = ["monitor"]
-
 [project.optional-dependencies]
 dev = [
     "boto3",
@@ -27,6 +20,15 @@ dev = [
     "mypy",
     "flake8",
 ]
+cli = [
+    "typer",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.distutils.egg_info]
+egg_base = "."
 
 [project.scripts]
 monitor = "monitor.cli:cli"

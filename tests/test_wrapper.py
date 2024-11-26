@@ -3,6 +3,7 @@ import os
 
 import pytest
 
+from monitor.messages import StepFunctionFailureMessage
 from monitor.monitors import BaseMonitor
 from monitor.wrapper import LambdaException
 from monitor.wrapper import LambdaErrorMessage
