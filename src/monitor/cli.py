@@ -34,7 +34,7 @@ def start_statemachine(name: str, payload: str | dict[str, object] | None = None
     print(execution_link)
 
 
-def invoke_lambda_function(name: str, payload: dict, envs: dict[str, str] | None = None):
+def invoke_lambda_function(name: str, payload: dict):
     from rich import print
     env = os.environ.get('APP_ENV', 'dev')
     aws_region = os.environ.get('AWS_REGION', 'eu-central-1')
