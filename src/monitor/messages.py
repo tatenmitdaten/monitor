@@ -181,7 +181,14 @@ class DbtMessage(BaseMessage):
 
 def from_event(event: dict) -> BaseMessageType:
     if 'Error' in event and 'Cause' in event:
-        event['errorType'] = 'StepFunctionFailure'
+        if event['Error'] == 'States.TaskFailed':
+            try:
+                cause_dict = json.loads(event['Cause'])
+                return from_event(cause_dict)
+            except JSONDecodeError:
+                pass
+        else:
+            event['errorType'] = 'StepFunctionFailure'
 
     match event.get('errorType'):
         case 'LambdaException':
