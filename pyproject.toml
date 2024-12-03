@@ -14,6 +14,7 @@ dynamic = ["version"]
 [project.optional-dependencies]
 dev = [
     "boto3",
+    "typer",
     "boto3-stubs[ses]",
     "moto",
     "pytest",
@@ -21,6 +22,7 @@ dev = [
     "flake8",
 ]
 cli = [
+    "boto3",
     "typer",
 ]
 
