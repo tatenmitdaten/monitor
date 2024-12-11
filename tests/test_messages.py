@@ -29,3 +29,12 @@ def test_step_function_error_handler2():
     }
     message = from_event(event)
     print(message.as_str)
+
+
+def test_step_function_error_handler3():
+    event = {
+        "Error": "LambdaException",
+        "Cause": "{\"errorMessage\": \"{\\\"name\\\": \\\"DbtTestError\\\", \\\"text\\\": \\\"Fail\\\", \\\"traceback\\\": \\\"Traceback (most recent call last):\\\\n  File \\\\\\\"/var/task/monitor/wrapper.py\\\\\\\", line 27, in wrapper\\\\n    return func(event, context)\\\\n           ^^^^^^^^^^^^^^^^^^^^\\\\n  File \\\\\\\"/var/task/app.py\\\\\\\", line 14, in lambda_handler\\\\n    return dbt_lambda.app.lambda_handler(event, context)\\\\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\\\n  File \\\\\\\"/var/task/dbt_lambda/app.py\\\\\\\", line 33, in lambda_handler\\\\n    raise DbtTestError('Fail')\\\\ndbt_lambda.app.DbtTestError: Fail\\\\n\\\", \\\"request_id\\\": \\\"dadaf7fd-c55a-441a-9345-e8b0945a1c32\\\", \\\"cloudwatch\\\": \\\"https://eu-central-1.console.aws.amazon.com/cloudwatch/home?region=eu-central-1#logsV2:log-groups/log-group/%2Faws%2Flambda%2FTransformFunction-dev/log-events/2024%2F12%2F11%2F%5B%24LATEST%5D07ff23830fd346cbb8a95ecac68cca1b?filterPattern=%22dadaf7fd-c55a-441a-9345-e8b0945a1c32%22\\\", \\\"envs\\\": {\\\"execution_env\\\": \\\"AWS_Lambda_python3.12\\\", \\\"default_region\\\": \\\"eu-central-1\\\", \\\"lambda_function_name\\\": \\\"TransformFunction-dev\\\", \\\"lambda_function_memory_size\\\": \\\"384\\\", \\\"lambda_log_group_name\\\": \\\"/aws/lambda/TransformFunction-dev\\\", \\\"lambda_log_stream_name\\\": \\\"2024/12/11/[$LATEST]07ff23830fd346cbb8a95ecac68cca1b\\\"}}\", \"errorType\": \"LambdaException\", \"requestId\": \"dadaf7fd-c55a-441a-9345-e8b0945a1c32\", \"stackTrace\": [\"  File \\\"/var/task/monitor/wrapper.py\\\", line 43, in wrapper\\n    raise LambdaException(message.as_json)\\n\"]}"
+    }
+    message = from_event(event)
+    print(message.as_str)
