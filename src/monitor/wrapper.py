@@ -24,6 +24,7 @@ def lambda_monitor(
         @functools.wraps(func)
         def wrapper(event: dict[str, Any], context: Any):
             try:
+                os.environ['AWS_REQUEST_ID'] = context.aws_request_id
                 return func(event, context)
             except Exception as error:
                 logging.error(error, exc_info=True)

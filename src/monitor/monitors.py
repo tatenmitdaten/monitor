@@ -7,13 +7,17 @@ import urllib.request
 import zoneinfo
 from dataclasses import dataclass
 from logging import getLogger
+from typing import Any
 from typing import cast
 from typing import Generator
 from typing import Generic
 
 import boto3
 from botocore.exceptions import ClientError
+
 from monitor.messages import BaseMessageType
+from monitor.messages import ErrorMessage
+from monitor.messages import LambdaErrorMessage
 
 env = os.environ.get('APP_ENV', 'dev')
 timezone = zoneinfo.ZoneInfo('Europe/Berlin')
@@ -28,62 +32,119 @@ class BaseMonitor(Generic[BaseMessageType]):
 
 
 @dataclass
+class Email:
+    subject: str
+    message: str
+    to_addresses: list[str]
+    source: str
+
+    def send(self):
+        client = boto3.client('ses', region_name='eu-central-1')
+        email_message = {
+            'Subject': {'Data': self.subject},
+            'Body': {'Text': {'Data': self.message}},
+        }
+        try:
+            response = client.send_email(
+                Source=self.source,
+                Destination={'ToAddresses': self.to_addresses},
+                Message=email_message  # type: ignore
+            )
+            message_id = response['MessageId']
+            logger.info(f'Email sent to {self.to_addresses}. Message ID: {message_id}')
+        except ClientError as e:
+            logger.error(e.__str__())
+            raise
+
+
+@dataclass
 class EmailMonitor(BaseMonitor):
     sender_address: str
-    business_addresses: list[str]
-    developer_addresses: tuple[str] = (
+    prod_addresses: list[str]
+    dev_addresses: tuple[str] = (
         'christian.schaefer@tatenmitdaten.com',
     )
 
     def notify(self, message: BaseMessageType):
-        to_addresses = list(self.developer_addresses)
+        to_addresses = list(self.dev_addresses)
         if env == 'prod':
-            to_addresses.extend(self.business_addresses)
+            to_addresses.extend(self.prod_addresses)
         datetime_str = datetime.datetime.now(timezone).strftime("%d.%m.%Y %H:%M:%S")
-        subject = f'⚠ ELT-Fehler ({message.name or 'unbekannt'}) - {datetime_str}'
-        message = cast(str, message.as_str)  # workaround for PyCharm bug
-        return send_email(subject, message, to_addresses, self.sender_address)
+        email = Email(
+            subject=f'⚠ ELT-Fehler ({message.name or 'unbekannt'}) - {datetime_str}',
+            message=cast(str, message.as_str),  # workaround for PyCharm bug
+            to_addresses=to_addresses,
+            source=self.sender_address
+        )
+        return email.send()
 
 
 @dataclass
-class SlackWebhook:
-    info: str
-    alert: str
+class SlackChannel:
+    name: str
+    webhook_path: str
+
+    @property
+    def webhook_url(self) -> str:
+        return f'https://hooks.slack.com/services/{self.webhook_path}'
+
+    def send(self, text: str | None, payload: dict | None = None):
+        payload = payload or {'text': text}
+        request = urllib.request.Request(
+            url=self.webhook_url,
+            data=json.dumps(payload).encode('ascii'),
+            headers={"Content-Type": "application/json"}
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=3) as response:
+                if response.status != 200:
+                    logger.info(response.status)
+                    logger.info(response.content)
+        except socket.timeout:
+            logger.info(f"Request to {self.webhook_url} timed out 3 times.")
+
+
+@dataclass(frozen=True)
+class SlackChannelSet:
+    info: SlackChannel
+    alert: SlackChannel
+
+
+dev_channel_set = SlackChannelSet(
+    info=SlackChannel(
+        'test-slack-monitor-info',
+        'T023N0JQGCT/B085359997G/Fsu6con2cq6NDtYdZhcKiX6M'
+    ),
+    alert=SlackChannel(
+        'test-slack-monitor-alert',
+        'T023N0JQGCT/B085YMDB29W/6WKsQJilssDiQMooCu3mFO9g'
+    )
+)
 
 
 @dataclass
 class SlackMonitor(BaseMonitor):
-    dev: SlackWebhook
-    prod: SlackWebhook
+    prod_channels: SlackChannelSet
+    dev_channels: SlackChannelSet = dev_channel_set
 
     @property
-    def webhook(self) -> SlackWebhook:
-        if env == 'prod':
-            return self.prod
-        return self.dev
+    def channels(self) -> SlackChannelSet:
+        return self.prod_channels if env == 'prod' else self.dev_channels
 
     def notify(self, message: BaseMessageType):
+        channel = self.channels.info
         text = [message.as_str]
-        webhook = self.webhook.info
-        if not message.__dict__.get('success', True) or 'traceback' in message:
-            webhook = self.webhook.alert
+        if isinstance(message, ErrorMessage):
+            channel = self.channels.alert
             text.insert(0, '<!channel>')
-        send_slack_message(webhook, text=' '.join(text))
+        channel.send(text=' '.join(text))
 
-    @staticmethod
-    def split_message(message: str) -> list:
-        if len(message) > 3000:
-            lines = message.split('\n')
-            messages = []
-            message = ''
-            for line in lines:
-                if len(message) + len(line) > 3000:
-                    messages.append(message)
-                    message = ''
-                message += line + '\n'
-            messages.append(message)
-            return messages
-        return [message]
+    def send_results(self, results: dict):
+        for message in self.parse_results(results):
+            is_alert = 'traceback' in results or not results.get('success', True)
+            channel = self.channels.alert if is_alert else self.channels.info
+            if message:
+                channel.send(text=message)
 
     @staticmethod
     def parse_results(results: dict) -> Generator[str, None, None]:
@@ -106,56 +167,30 @@ class SlackMonitor(BaseMonitor):
             else:
                 yield f'continued long message...{short_message}'
 
-    def send_results(self, results: dict, channel: str = 'info'):
-        for message in self.parse_results(results):
-            if not results.get('success', True) or 'traceback' in results:
-                channel = 'alert'
-            if message:
-                if channel == 'alert':
-                    send_slack_message('alert', '<!channel> ' + message)
-                send_slack_message('info', message)
+    @staticmethod
+    def split_message(message: str) -> list:
+        if len(message) > 3000:
+            lines = message.split('\n')
+            messages = []
+            message = ''
+            for line in lines:
+                if len(message) + len(line) > 3000:
+                    messages.append(message)
+                    message = ''
+                message += line + '\n'
+            messages.append(message)
+            return messages
+        return [message]
 
     @staticmethod
     def get_lambda_crash_summary() -> str:
-        function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "")
-        log_stream_group = urllib.parse.quote_plus(os.environ.get("AWS_LAMBDA_LOG_GROUP_NAME", ""))
-        log_stream_name = urllib.parse.quote_plus(os.environ.get("AWS_LAMBDA_LOG_STREAM_NAME", ""))
-        log_stream_url = 'https://eu-central-1.console.aws.amazon.com/cloudwatch/home?' \
-                         'region=eu-central-1#logsV2:log-groups/log-group/' \
-                         f'{log_stream_group}/log-events/{log_stream_name}'
-        return f'`{function_name}` crashed, see <{log_stream_url}|log stream> for details'
-
-
-def send_slack_message(webhook: str, text: str | None, payload: dict | None = None):
-    payload = payload or {'text': text}
-    request = urllib.request.Request(
-        url=f'https://hooks.slack.com/services/{webhook}',
-        data=json.dumps(payload).encode('ascii'),
-        headers={"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=3) as response:
-            if response.status != 200:
-                logger.info(response.status)
-                logger.info(response.content)
-    except socket.timeout:
-        logger.info(f"Request to https://hooks.slack.com/services/{webhook} timed out.")
-
-
-def send_email(subject: str, message: str, to_addresses: list[str], source: str):
-    client = boto3.client('ses', region_name='eu-central-1')
-    email_message = {
-        'Subject': {'Data': subject},
-        'Body': {'Text': {'Data': message}},
-    }
-    try:
-        response = client.send_email(
-            Source=source,
-            Destination={'ToAddresses': to_addresses},
-            Message=email_message  # type: ignore
+        function_name = os.environ.get('AWS_LAMBDA_FUNCTION_NAME')
+        if not function_name:
+            return 'Lambda crashed'
+        cloudwatch_link = LambdaErrorMessage.get_cloudwatch_link(
+            region='eu-central-1',
+            log_group_name=os.environ['AWS_LAMBDA_LOG_GROUP_NAME'],
+            log_stream_name=os.environ['AWS_LAMBDA_LOG_STREAM_NAME'],
+            aws_request_id=os.environ.get('AWS_REQUEST_ID', '')
         )
-        message_id = response['MessageId']
-        logger.info(f'Email sent to {to_addresses}. Message ID: {message_id}')
-    except ClientError as e:
-        logger.error(e.__str__())
-        raise
+        return f'`{function_name}` crashed, see <{cloudwatch_link}|cloudwatch> for details'
