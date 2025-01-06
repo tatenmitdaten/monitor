@@ -7,7 +7,6 @@ import urllib.request
 import zoneinfo
 from dataclasses import dataclass
 from logging import getLogger
-from typing import Any
 from typing import cast
 from typing import Generator
 from typing import Generic
@@ -124,7 +123,7 @@ dev_channel_set = SlackChannelSet(
 
 @dataclass
 class SlackMonitor(BaseMonitor):
-    prod_channels: SlackChannelSet
+    prod_channels: SlackChannelSet | None
     dev_channels: SlackChannelSet = dev_channel_set
 
     @property
