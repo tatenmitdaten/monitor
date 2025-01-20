@@ -94,6 +94,7 @@ class SlackChannel:
             data=json.dumps(payload).encode('ascii'),
             headers={"Content-Type": "application/json"}
         )
+        logger.info(f'Sending message to {self.name} Slack channel')
         try:
             with urllib.request.urlopen(request, timeout=3) as response:
                 if response.status != 200:
@@ -131,9 +132,11 @@ class SlackMonitor(BaseMonitor):
         return self.prod_channels if env == 'prod' else self.dev_channels
 
     def notify(self, message: BaseMessageType):
+        logger.info(message.as_str)
         channel = self.channels.info
         text = [message.as_str]
         if isinstance(message, ErrorMessage):
+            logger.info('Sending alert to Slack')
             channel = self.channels.alert
             text.insert(0, '<!channel>')
         channel.send(text=' '.join(text))
