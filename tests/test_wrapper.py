@@ -77,3 +77,19 @@ def test_lambda_error_handler(aws_lambda_vars, context):
         })
 
     assert expected == error_message
+
+
+def test_notify_hook(capsys, context):
+    def notify_hook(result) -> str:
+        return str(result['counter'])
+
+    @lambda_monitor(
+        monitor=BaseMonitor(),
+        notify_hook=notify_hook
+    )
+    def my_lambda_handler(_, __):
+        return {'counter': 1}
+
+    my_lambda_handler({}, context)
+    captured = capsys.readouterr()
+    assert captured.out == '1\n'

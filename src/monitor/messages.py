@@ -48,6 +48,15 @@ class BaseMessage(ABC, Generic[BaseMessageType]):
 
 
 @dataclass
+class SimpleMessage(BaseMessage):
+    text: str
+
+    @property
+    def as_str(self) -> str:
+        return self.text
+
+
+@dataclass
 class ErrorMessage(BaseMessage):
     name: str
     text: str
@@ -169,16 +178,6 @@ class StepFunctionFailureMessage(ErrorMessage):
         )
 
 
-@dataclass
-class DbtMessage(BaseMessage):
-    name: str
-    text: str
-
-    @property
-    def as_str(self) -> str:
-        return self.text
-
-
 def from_event(event: dict) -> BaseMessageType:
     if 'Error' in event and 'Cause' in event:
         try:
@@ -192,9 +191,6 @@ def from_event(event: dict) -> BaseMessageType:
         case 'LambdaException':
             error_message_dict = json.loads(event['errorMessage'])
             return LambdaErrorMessage(**error_message_dict)
-        case 'DbtRuntimeError':
-            error_message_dict = json.loads(event['errorMessage'])
-            return DbtMessage(**error_message_dict)
         case 'StepFunctionFailure':
             return StepFunctionFailureMessage(
                 name=event['Error'],

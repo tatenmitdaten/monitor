@@ -8,7 +8,6 @@ import zoneinfo
 from dataclasses import dataclass
 from logging import getLogger
 from typing import cast
-from typing import Generator
 from typing import Generic
 
 import boto3
@@ -16,7 +15,6 @@ from botocore.exceptions import ClientError
 
 from monitor.messages import BaseMessageType
 from monitor.messages import ErrorMessage
-from monitor.messages import LambdaErrorMessage
 
 env = os.environ.get('APP_ENV', 'dev')
 timezone = zoneinfo.ZoneInfo('Europe/Berlin')
@@ -27,7 +25,7 @@ logger = getLogger()
 class BaseMonitor(Generic[BaseMessageType]):
 
     def notify(self, message: BaseMessageType) -> None:
-        pass
+        print(message.as_str)
 
 
 @dataclass
@@ -133,14 +131,15 @@ class SlackMonitor(BaseMonitor):
 
     def notify(self, message: BaseMessageType):
         logger.info(message.as_str)
-        channel = self.channels.info
-        text = [message.as_str]
         if isinstance(message, ErrorMessage):
-            logger.info('Sending alert to Slack')
             channel = self.channels.alert
-            text.insert(0, '<!channel>')
-        channel.send(text=' '.join(text))
+            text = f'<!channel> {message.as_str}'
+        else:
+            channel = self.channels.info
+            text = message.as_str
+        channel.send(text=text)
 
+    """
     def send_results(self, results: dict):
         for message in self.parse_results(results):
             is_alert = 'traceback' in results or not results.get('success', True)
@@ -196,3 +195,4 @@ class SlackMonitor(BaseMonitor):
             aws_request_id=os.environ.get('AWS_REQUEST_ID', '')
         )
         return f'`{function_name}` crashed, see <{cloudwatch_link}|cloudwatch> for details'
+    """

@@ -121,40 +121,36 @@ def error_handling_transform(
 @cli.command(name='lambda')
 def error_handling_lambda(
         fail: Annotated[bool, Option(help='Fail Lambda execution')] = False,
+        test: Annotated[bool, Option(help='Start dbt test run')] = False,
         function: Annotated[str, Option(
             '-f', '--function',
             help='Lambda function name',
-            click_type=Choice(choices=['Transform', 'ExtractLoad', 'Dbt'], case_sensitive=False)
-        )] = 'ExtractLoadFunction',
+            click_type=Choice(choices=['Transform', 'ExtractLoad'], case_sensitive=False)
+        )] = 'ExtractLoad',
 ):
     """
     Test error handling in Lambda functions (Transform, ExtractLoad)
     """
-    match function.lower():
-        case 'transform':
-            function = 'TransformFunction'
-            payload = {
-                'args': ['x-fail' if fail else 'x-error']
-            }
-        case 'dbt':
-            function = 'TransformFunction'
-            payload = {
-                'args': ['x-test']
-            }
-        case 'extractload':
-            function = 'ExtractLoadFunction'
-            payload = {
-                'task_type': 'ErrorTask',
-                'job_id': 'test job id',
-                'task_id': 'test task id',
-                'database_name': 'test database',
-                'schema_name': 'test schema',
-                'table_name': 'test table',
-                'envs': {'FAIL_ON_ERROR': str(fail)}
-            }
-        case _:
-            raise ValueError(f'Invalid function: {function}')
-
+    if function.lower() == 'transform':
+        function = 'TransformFunction'
+        if test:
+            arg = 'x-test'
+        elif fail:
+            arg = 'x-fail'
+        else:
+            arg = 'x-error'
+        payload = {'args': [arg]}
+    else:
+        function = 'ExtractLoadFunction'
+        payload = {
+            'task_type': 'ErrorTask',
+            'job_id': 'test job id',
+            'task_id': 'test task id',
+            'database_name': 'test database',
+            'schema_name': 'test schema',
+            'table_name': 'test table',
+            'envs': {'FAIL_ON_ERROR': str(fail)}
+        }
     invoke_lambda_function(
         name=function,
         payload=payload
