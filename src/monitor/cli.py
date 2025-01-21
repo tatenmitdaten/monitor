@@ -112,8 +112,7 @@ def error_handling_transform(
     start_statemachine(
         name='Transform',
         payload={
-            'args': [f'x-{mode}'],
-            'docs': []
+            'args': [f'x-{mode}']
         }
     )
 
