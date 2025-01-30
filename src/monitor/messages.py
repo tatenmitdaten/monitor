@@ -33,7 +33,7 @@ class BaseMessage(ABC, Generic[BaseMessageType]):
         return cls(**message)
 
     @classmethod
-    def from_error(cls, error: Exception, context) -> BaseMessageType:
+    def from_error(cls, error: Exception, event: dict, context) -> BaseMessageType:
         try:
             error_dict = json.loads(str(error))
         except json.JSONDecodeError:
@@ -86,11 +86,12 @@ class LambdaErrorMessage(ErrorMessage):
         )
 
     @classmethod
-    def from_error(cls, error: Exception, context) -> 'LambdaErrorMessage':
+    def from_error(cls, error: Exception, event: dict, context) -> 'LambdaErrorMessage':
         envs = cls.get_envs()
+        event_str = json.dumps(event, indent=2, ensure_ascii=False, default=str)
         return cls(
             name=type(error).__name__,
-            text=str(error),
+            text=f'Event:\n{event_str}\n{str(error)}',
             traceback=traceback.format_exc(),
             request_id=context.aws_request_id,
             cloudwatch=cls.get_cloudwatch_link(

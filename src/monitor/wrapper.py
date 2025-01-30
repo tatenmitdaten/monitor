@@ -39,7 +39,7 @@ def lambda_monitor(
                         monitor.notify(SimpleMessage(text=text))
             except Exception as error:
                 logging.error(error, exc_info=True)
-                message = LambdaErrorMessage.from_error(error, context)
+                message = LambdaErrorMessage.from_error(error, event, context)
                 if os.environ.get('FAIL_ON_ERROR', 'false').lower() == 'true':
                     raise LambdaException(message.as_json)
                 else:

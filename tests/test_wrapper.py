@@ -51,11 +51,11 @@ def test_lambda_error_handler(aws_lambda_vars, context):
     @lambda_monitor(
         monitor=BaseMonitor()
     )
-    def my_lambda_handler(_, __):
+    def my_lambda_handler(event, _):
         raise RuntimeError('Test Error')
 
     with pytest.raises(LambdaException) as wrapper:
-        my_lambda_handler({}, context)
+        my_lambda_handler({'args': 'test'}, context)
     error = wrapper.value
 
     error_dict = json.loads(error.__str__())
@@ -63,7 +63,7 @@ def test_lambda_error_handler(aws_lambda_vars, context):
     error_message.traceback = error_message.traceback.split('\n')[0]
     expected = LambdaErrorMessage(
         name='RuntimeError',
-        text='Test Error',
+        text='Event:\n{\n  "args": "test"\n}\nTest Error',
         traceback='Traceback (most recent call last):',
         request_id='24dfa092-ca3b-400c-954d-7ce9cfbf4bc3',
         cloudwatch='https://eu-central-1.console.aws.amazon.com/cloudwatch/home?region=eu-central-1#logsV2:log-groups/log-group/%2Faws%2Flambda%2FTestFunction-dev/log-events/2024%2F10%2F31%2F%5B%24LATEST%5D1ef30f6c48d24e3287ee2b41908216b2?filterPattern=%2224dfa092-ca3b-400c-954d-7ce9cfbf4bc3%22',
