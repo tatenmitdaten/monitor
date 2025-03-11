@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from enum import Enum
 from typing import Annotated
 
 import boto3
@@ -14,7 +15,26 @@ cli = typer.Typer(
 )
 
 
-def start_statemachine(name: str, payload: str | dict[str, object] | None = None):
+class Env(str, Enum):
+    """
+    Environment.
+    """
+    dev = 'dev'
+    prod = 'prod'
+
+    def set(self):
+        os.environ['APP_ENV'] = self.value
+
+
+env_ann = Annotated[
+    Env, Option(
+        '--env', '-e',
+        help="target environment"
+    )
+]
+
+
+def start_statemachine(name: str, payload: str | dict[str, object] | list | None = None):
     env = os.environ.get('APP_ENV', 'dev')
     aws_region = os.environ.get('AWS_REGION', 'eu-central-1')
     try:
@@ -22,7 +42,7 @@ def start_statemachine(name: str, payload: str | dict[str, object] | None = None
     except KeyError:
         raise KeyError('AWS_ACCOUNT_ID environment variable not set')
     state_machine_arn = f'arn:aws:states:{aws_region}:{aws_account_id}:stateMachine:{name}-{env}'
-    if isinstance(payload, dict):
+    if isinstance(payload, (dict, list)):
         payload = json.dumps(payload)
     response = boto3.client('stepfunctions').start_execution(
         stateMachineArn=state_machine_arn,
@@ -34,8 +54,7 @@ def start_statemachine(name: str, payload: str | dict[str, object] | None = None
     print(execution_link)
 
 
-def invoke_lambda_function(name: str, payload: dict):
-    from rich import print
+def invoke_lambda_function(name: str, payload: dict | str):
     env = os.environ.get('APP_ENV', 'dev')
     aws_region = os.environ.get('AWS_REGION', 'eu-central-1')
     try:
@@ -45,10 +64,10 @@ def invoke_lambda_function(name: str, payload: dict):
     function_arn = f'arn:aws:lambda:{aws_region}:{aws_account_id}:function:{name}-{env}'
     if isinstance(payload, dict):
         payload = json.dumps(payload)
+    print(function_arn)
     response = boto3.client('lambda').invoke(
         FunctionName=function_arn,
-        Payload=payload or '{}',
-
+        Payload=payload or '{}'
     )
     payload = json.loads(response['Payload'].read())
     print(payload)
@@ -57,10 +76,12 @@ def invoke_lambda_function(name: str, payload: dict):
 @cli.command(name='schedule')
 def error_handling_schedule(
         fail: Annotated[bool, Option(help='Fail Lambda execution')] = False,
+        env: env_ann = Env.dev
 ):
     """
     Test error handling in ScheduleTask
     """
+    Env.set(env)
     start_statemachine(
         'ExtractLoadJobQueue',
         {
@@ -79,10 +100,12 @@ def error_handling_schedule(
 @cli.command(name='extractload')
 def error_handling_extractload(
         fail: Annotated[bool, Option(help='Fail Lambda execution')] = False,
+        env: env_ann = Env.dev
 ):
     """
     Test error handling in ExtractLoad
     """
+    env.set()
     start_statemachine(
         name='ExtractLoadJobQueue',
         payload={
@@ -104,16 +127,16 @@ def error_handling_transform(
             '-m', '--mode',
             help='Error mode',
             click_type=Choice(choices=['error', 'fail', 'test'], case_sensitive=False)
-        )]
+        )],
+        env: env_ann = Env.dev
 ):
     """
     Test error handling in Transform
     """
+    env.set()
     start_statemachine(
         name='Transform',
-        payload={
-            'args': [f'x-{mode}']
-        }
+        payload=[[f'x-{mode}']]
     )
 
 
@@ -126,10 +149,12 @@ def error_handling_lambda(
             help='Lambda function name',
             click_type=Choice(choices=['Transform', 'ExtractLoad'], case_sensitive=False)
         )] = 'ExtractLoad',
+        env: env_ann = Env.dev
 ):
     """
     Test error handling in Lambda functions (Transform, ExtractLoad)
     """
+    env.set()
     if function.lower() == 'transform':
         function = 'TransformFunction'
         if test:
