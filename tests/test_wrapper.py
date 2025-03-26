@@ -51,7 +51,7 @@ def test_lambda_error_handler(aws_lambda_vars, context):
     @lambda_monitor(
         monitor=BaseMonitor()
     )
-    def my_lambda_handler(event, _):
+    def my_lambda_handler(_, __):
         raise RuntimeError('Test Error')
 
     with pytest.raises(LambdaException) as wrapper:
